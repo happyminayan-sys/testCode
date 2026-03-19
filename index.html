@@ -494,6 +494,7 @@ let unsubscribe = null; // Firestore listener
 window.signIn = async () => {
   try {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     await signInWithPopup(auth, provider);
   } catch(e) {
     showToast('ログインに失敗しました');
