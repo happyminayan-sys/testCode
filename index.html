@@ -689,9 +689,11 @@ function elapsedHTML(e) {
   const type = entryType(e);
   const ms = type==='countdown' ? new Date(last.date)-Date.now() : Date.now()-new Date(last.date);
   const d = fmtDur(Math.abs(ms));
+  // 未来なら「後」を単位の後ろに付ける
+  const suffix = (type === 'countdown' && ms > 0) ? '後' : '';
   return `<div class="card-elapsed">
     <span class="el-main">${d.main.toLocaleString()}</span>
-    <span class="el-unit">${d.unit}</span>
+    <span class="el-unit">${d.unit}${suffix}</span>
     ${d.sub?`<span class="el-sub">${d.sub}</span>`:''}
   </div>`;
 }
