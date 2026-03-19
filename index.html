@@ -904,34 +904,60 @@ function setFilter(f,btn) {
 function setSort(v) { sortBy=v; render(); }
 
 // ── フォーマット ──
+// ms を年・月・日・時・分・秒に分解（余りが正確になるよう実際の日付計算を使う）
+function breakDownMs(ms) {
+  const now = new Date();
+  const past = new Date(now.getTime() - ms);
+  let y = now.getFullYear() - past.getFullYear();
+  let mo = now.getMonth() - past.getMonth();
+  let d = now.getDate() - past.getDate();
+  if (d < 0) { mo--; d += new Date(now.getFullYear(), now.getMonth(), 0).getDate(); }
+  if (mo < 0) { y--; mo += 12; }
+  const totalDays = Math.floor(ms / 86400000);
+  const h = Math.floor((ms % 86400000) / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  return { y, mo, d, totalDays, h, m, s };
+}
 function fmtDur(ms) {
-  const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
-  const mo=Math.floor(d/30.44),y=Math.floor(d/365.25);
-  if(y>0) return{main:y,unit:'年',sub:`${Math.floor(d%365.25)}日`};
-  if(mo>0) return{main:mo,unit:'ヶ月',sub:`${d%30}日`};
-  if(d>0) return{main:d,unit:'日',sub:`${h%24}時間 ${m%60}分`};
-  if(h>0) return{main:h,unit:'時間',sub:`${m%60}分 ${s%60}秒`};
-  if(m>0) return{main:m,unit:'分',sub:`${s%60}秒`};
+  const {y,mo,d,totalDays,h,m,s} = breakDownMs(ms);
+  if(y>0) {
+    let sub = '';
+    if(mo>0 && d>0) sub=`${mo}ヶ月${d}日`;
+    else if(mo>0) sub=`${mo}ヶ月`;
+    else if(d>0) sub=`${d}日`;
+    return{main:y,unit:'年',sub};
+  }
+  if(mo>0) return{main:mo,unit:'ヶ月',sub:d>0?`${d}日`:''};
+  if(totalDays>0) return{main:totalDays,unit:'日',sub:`${h}時間 ${m}分`};
+  if(h>0) return{main:h,unit:'時間',sub:`${m}分 ${s}秒`};
+  if(m>0) return{main:m,unit:'分',sub:`${s}秒`};
   return{main:s,unit:'秒',sub:''};
 }
 function fmtDurStr(ms,direction) {
-  const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
-  const mo=Math.floor(d/30.44),y=Math.floor(d/365.25);
+  const {y,mo,d,totalDays,h,m,s} = breakDownMs(ms);
   let str;
-  if(y>0) str=`${y}年 ${Math.floor(d%365.25)}日`;
-  else if(mo>0) str=`${mo}ヶ月 ${d%30}日`;
-  else if(d>0) str=`${d}日`;
+  if(y>0) {
+    str = `${y}年`;
+    if(mo>0) str += `${mo}ヶ月`;
+    if(d>0) str += `${d}日`;
+  } else if(mo>0) str=d>0?`${mo}ヶ月${d}日`:`${mo}ヶ月`;
+  else if(totalDays>0) str=`${totalDays}日`;
   else if(h>0) str=`${h}時間`;
   else if(m>0) str=`${m}分`;
   else str=`${s}秒`;
   return direction==='future'?`${str}後`:`${str}前`;
 }
 function fmtDurShort(ms) {
-  const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
-  const mo=Math.floor(d/30.44),y=Math.floor(d/365.25);
-  if(y>0) return`${y}年 ${Math.floor(d%365.25)}日`;
-  if(mo>0) return`${mo}ヶ月 ${d%30}日`;
-  if(d>0) return`${d}日`;
+  const {y,mo,d,totalDays,h,m,s} = breakDownMs(ms);
+  if(y>0) {
+    let str = `${y}年`;
+    if(mo>0) str += `${mo}ヶ月`;
+    if(d>0) str += `${d}日`;
+    return str;
+  }
+  if(mo>0) return d>0?`${mo}ヶ月${d}日`:`${mo}ヶ月`;
+  if(totalDays>0) return`${totalDays}日`;
   if(h>0) return`${h}時間`;
   if(m>0) return`${m}分`;
   return`${s}秒`;
