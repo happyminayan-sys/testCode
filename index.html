@@ -1066,41 +1066,62 @@ function onCsvFileSelected(input) {
   binReader.readAsArrayBuffer(file);
 }
 function parseCSVText(text) {
-  text=text.replace(/^\uFEFF/,'');
-  const lines=text.split(/\r?\n/).filter(l=>l.trim());
-  if(lines.length<2) throw new Error('データが少なすぎます');
-  function parseLine(line){
-    const cols=[];let cur='',inQ=false;
-    for(let i=0;i<line.length;i++){
-      const c=line[i];
-      if(c==='"'){if(inQ&&line[i+1]==='"'){cur+='"';i++;}else inQ=!inQ;}
-      else if(c===','&&!inQ){cols.push(cur);cur='';}
-      else cur+=c;
+  text = text.replace(/^\uFEFF/, '');
+
+  // クォート内の改行を考慮したCSVパーサー
+  function parseCSV(raw) {
+    const result = [];
+    let row = [], cur = '', inQ = false;
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i];
+      if (c === '"') {
+        if (inQ && raw[i+1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (c === ',' && !inQ) {
+        row.push(cur.trim()); cur = '';
+      } else if ((c === '\n' || (c === '\r' && raw[i+1] === '\n')) && !inQ) {
+        if (c === '\r') i++;
+        row.push(cur.trim()); result.push(row); row = []; cur = '';
+      } else {
+        // クォート内の改行はスペースに変換
+        if ((c === '\n' || c === '\r') && inQ) cur += ' ';
+        else cur += c;
+      }
     }
-    cols.push(cur);return cols.map(s=>s.trim());
+    if (cur || row.length) { row.push(cur.trim()); result.push(row); }
+    return result;
   }
-  const rows=[],errors=[];
-  for(let i=1;i<lines.length;i++){
-    const cols=parseLine(lines[i]);
-    const title=cols[0]||'',category=cols[1]||'',dateStr=cols[2]||'',note=cols[3]||'';
-    if(!title){errors.push(`${i+1}行目: タイトルが空`);continue;}
-    // 日時が空の行はスキップ
+
+  const allRows = parseCSV(text).filter(r => r.some(c => c));
+  if (allRows.length < 2) throw new Error('データが少なすぎます');
+
+  function normalizeDate(dateStr) {
+    if (!dateStr) return null;
+    let s = dateStr.trim();
+    s = s.replace(/\//g, '-');
+    // 月・日・時・分を2桁にゼロ埋め
+    // YYYY-M-D → YYYY-MM-DD
+    s = s.replace(/^(\d{4})-(\d{1})-/, '$1-0$2-');
+    s = s.replace(/^(\d{4}-\d{2})-(\d{1})/, '$1-0$2');
+    // HH:mm の時間部分も1桁対応: "3:34" → "03:34"
+    s = s.replace(/(T|\s)(\d{1}):/, '$10$2:');
+    s = s.replace(' ', 'T');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s += 'T00:00';
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  }
+
+  const rows = [], errors = [];
+  for (let i = 1; i < allRows.length; i++) {
+    const cols = allRows[i];
+    const title = cols[0]||'', category = cols[1]||'', dateStr = cols[2]||'', note = cols[3]||'';
+    if (!title) { errors.push(`${i+1}行目: タイトルが空`); continue; }
     if (!dateStr) continue;
-    // YYYY/M/D H:mm や YYYY/MM/DD など1桁月日・時間なしに対応
-    let normalized = dateStr.trim();
-    // スラッシュをハイフンに
-    normalized = normalized.replace(/\//g, '-');
-    // 月・日を2桁にゼロ埋め: 2026-3-26 → 2026-03-26
-    normalized = normalized.replace(/-(\d)(?=-|T|\s|$)/g, '-0$1');
-    // スペースをTに
-    normalized = normalized.replace(' ', 'T');
-    // 時間なし(YYYY-MM-DD)なら00:00補完
-    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) normalized += 'T00:00';
-    const date = new Date(normalized);
-    if (isNaN(date)) { errors.push(`${i+1}行目: 日時が無効 "${dateStr}"`); continue; }
-    rows.push({title,category,date:date.toISOString(),note});
+    const date = normalizeDate(dateStr);
+    if (!date) { errors.push(`${i+1}行目: 日時が無効 "${dateStr}"`); continue; }
+    rows.push({ title, category, date: date.toISOString(), note });
   }
-  if(errors.length) throw new Error(errors.join('\n'));
+  if (errors.length) throw new Error(errors.join('\n'));
   return rows;
 }
 function parseCsvPreview() {
