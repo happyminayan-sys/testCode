@@ -402,9 +402,7 @@
       <div class="menu-wrap">
         <button class="btn-icon" onclick="toggleMenu()">⋯</button>
         <div class="dropdown" id="menuDropdown">
-          <button class="menu-item" onclick="exportCSV()">CSV 出力</button>
-          <button class="menu-item" onclick="importCSV()">CSV 一括入力</button>
-          <div class="menu-divider"></div>
+        <div class="menu-divider"></div>
           <button class="menu-item" onclick="exportJSON()">バックアップ（JSON）</button>
           <button class="menu-item" onclick="importJSON()">インポート（JSON）</button>
           <div class="menu-divider"></div>
@@ -473,43 +471,6 @@
   </div>
 </div>
 
-<!-- CSV インポートモーダル -->
-<div class="overlay" id="csvOverlay" onclick="closeCsvModal(event)">
-  <div class="modal" onclick="event.stopPropagation()">
-    <div class="modal-handle"></div>
-    <div class="modal-header">
-      <div class="modal-title">CSV 一括入力</div>
-      <button class="btn-icon" onclick="closeCsvModal()" style="width:30px;height:30px;font-size:13px;">✕</button>
-    </div>
-    <div class="modal-body">
-      <div style="font-size:12px;color:var(--muted);line-height:1.8;background:var(--bg);border-radius:8px;padding:10px 12px;">
-        <strong style="color:var(--text);display:block;margin-bottom:4px;">フォーマット（1行＝1記録・ヘッダーあり）</strong>
-        <code style="font-family:var(--mono);">タイトル,カテゴリ,日時,メモ</code><br>
-        <code style="font-family:var(--mono);">通院,健康,2024/01/15 10:00,田中先生</code><br>
-        <span style="margin-top:6px;display:block;">・同じタイトルは同じ項目にまとめます<br>・カテゴリ・メモは省略可<br>・日時: YYYY/MM/DD HH:mm</span>
-      </div>
-      <div>
-        <label class="form-label">ファイルを選ぶ または テキストを貼り付ける</label>
-        <div style="display:flex;gap:8px;margin-bottom:8px;align-items:center;">
-          <button class="btn-secondary" style="flex:none;padding:8px 14px;font-size:13px;" onclick="document.getElementById('csvFileInput').click()">ファイルを選択</button>
-          <span id="csvFileName" style="font-size:12px;color:var(--muted);"></span>
-          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="onCsvFileSelected(this)">
-        </div>
-        <textarea class="form-input" id="csvText" rows="7"
-          placeholder="タイトル,カテゴリ,日時,メモ&#10;通院,健康,2024/01/15 10:00,田中先生"
-          style="font-family:var(--mono);font-size:12px;"></textarea>
-      </div>
-      <div id="csvPreview" style="display:none;">
-        <label class="form-label">プレビュー</label>
-        <div id="csvPreviewContent" style="font-size:12px;line-height:1.8;background:var(--bg);border-radius:8px;padding:10px 12px;max-height:180px;overflow-y:auto;font-family:var(--mono);"></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn-secondary" onclick="parseCsvPreview()">確認する</button>
-      <button class="btn-primary" id="csvImportBtn" onclick="executeCsvImport()" style="opacity:0.4;pointer-events:none;">インポート</button>
-    </div>
-  </div>
-</div>
 
 <div class="toast" id="toast"></div>
 
@@ -698,7 +659,6 @@ let filter = 'all';
 let sortBy = 'recent';
 let editId = null;
 let expandedIds = new Set();
-let csvParsed = null;
 
 function uid() { return crypto.randomUUID(); }
 
@@ -1299,29 +1259,6 @@ function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').repl
 function toggleMenu(){document.getElementById('menuDropdown').classList.toggle('open');}
 document.addEventListener('click',e=>{if(!e.target.closest('.menu-wrap'))document.getElementById('menuDropdown').classList.remove('open');});
 
-// ── CSV出力 ──
-function exportCSV() {
-  const rows=[['項目','カテゴリ','記録日時','メモ','前回からの間隔']];
-  entries.forEach(e=>{
-    const logs=[...e.logs].sort((a,b)=>new Date(b.date)-new Date(a.date));
-    logs.forEach((log,i)=>{
-      const next=logs[i+1];
-      const interval=next?fmtDurShort(Math.abs(new Date(log.date)-new Date(next.date))):'';
-      rows.push([e.title,e.category||'',fmtDate(log.date),log.note||'',interval]);
-    });
-  });
-  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
-  // UTF-8 BOMをUint8Arrayで確実に付加（Windows Excelの文字化け対策）
-  const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
-  const csvBytes = new TextEncoder().encode(csv);
-  const csvWithBom = new Blob([bom, csvBytes], {type: 'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(csvWithBom);
-  const a = document.createElement('a');
-  a.href = url; a.download = `since-timer-${Date.now()}.csv`; a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-  showToast('CSVを出力しました');
-  document.getElementById('menuDropdown').classList.remove('open');
-}
 
 // ── JSONバックアップ ──
 function exportJSON() {
@@ -1350,168 +1287,6 @@ async function importJSON() {
   inp.click();
 }
 
-// ── CSV インポート ──
-function importCSV() {
-  document.getElementById('menuDropdown').classList.remove('open');
-  document.getElementById('csvText').value='';
-  document.getElementById('csvFileName').textContent='';
-  document.getElementById('csvPreview').style.display='none';
-  csvParsed=null;
-  const btn=document.getElementById('csvImportBtn');
-  btn.style.opacity='0.4'; btn.style.pointerEvents='none';
-  document.getElementById('csvOverlay').classList.add('open');
-}
-function closeCsvModal(event) {
-  if(event&&event.target!==document.getElementById('csvOverlay')) return;
-  document.getElementById('csvOverlay').classList.remove('open');
-}
-function onCsvFileSelected(input) {
-  const file=input.files[0]; if(!file) return;
-  document.getElementById('csvFileName').textContent=file.name;
-  // まずバイト列で読んでBOMやShift-JISを判定する
-  const binReader=new FileReader();
-  binReader.onload=e=>{
-    const bytes=new Uint8Array(e.target.result);
-    // UTF-8 BOM: EF BB BF
-    const isUtf8Bom = bytes[0]===0xEF && bytes[1]===0xBB && bytes[2]===0xBF;
-    // Shift-JIS判定: 0x81-0x9F or 0xE0-0xFC の2バイト文字が含まれるか
-    let likelyShiftJis = false;
-    if (!isUtf8Bom) {
-      for (let i=0; i<Math.min(bytes.length-1, 2000); i++) {
-        const b = bytes[i];
-        if ((b>=0x81 && b<=0x9F) || (b>=0xE0 && b<=0xFC)) { likelyShiftJis=true; break; }
-      }
-    }
-    const encoding = likelyShiftJis ? 'Shift-JIS' : 'UTF-8';
-    const textReader=new FileReader();
-    textReader.onload=te=>{document.getElementById('csvText').value=te.target.result;};
-    textReader.readAsText(file, encoding);
-  };
-  binReader.readAsArrayBuffer(file);
-}
-function parseCSVText(text) {
-  text = text.replace(/^\uFEFF/, '');
-
-  // クォート内の改行を考慮したCSVパーサー
-  function parseCSV(raw) {
-    const result = [];
-    let row = [], cur = '', inQ = false;
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i];
-      if (c === '"') {
-        if (inQ && raw[i+1] === '"') { cur += '"'; i++; }
-        else inQ = !inQ;
-      } else if (c === ',' && !inQ) {
-        row.push(cur.trim()); cur = '';
-      } else if ((c === '\n' || (c === '\r' && raw[i+1] === '\n')) && !inQ) {
-        if (c === '\r') i++;
-        row.push(cur.trim()); result.push(row); row = []; cur = '';
-      } else {
-        // クォート内の改行はスペースに変換
-        if ((c === '\n' || c === '\r') && inQ) cur += ' ';
-        else cur += c;
-      }
-    }
-    if (cur || row.length) { row.push(cur.trim()); result.push(row); }
-    return result;
-  }
-
-  const allRows = parseCSV(text).filter(r => r.some(c => c));
-  if (allRows.length < 2) throw new Error('データが少なすぎます');
-
-  function normalizeDate(dateStr) {
-    if (!dateStr) return null;
-    const s = dateStr.trim().replace(/\//g, '-');
-    // YYYY-M-D H:MM または YYYY-M-D にマッチして各部をゼロ埋め
-    const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[\sT](\d{1,2}):(\d{2}))?$/);
-    if (!m) return null;
-    const Y=m[1], M=m[2].padStart(2,'0'), D=m[3].padStart(2,'0');
-    const normalized = m[4]
-      ? `${Y}-${M}-${D}T${m[4].padStart(2,'0')}:${m[5]}`
-      : `${Y}-${M}-${D}T00:00`;
-    const d = new Date(normalized);
-    return isNaN(d) ? null : d;
-  }
-
-  const rows = [], errors = [];
-  for (let i = 1; i < allRows.length; i++) {
-    const cols = allRows[i];
-    const title = cols[0]||'', category = cols[1]||'', dateStr = cols[2]||'', note = cols[3]||'';
-    if (!title) { errors.push(`${i+1}行目: タイトルが空`); continue; }
-    if (!dateStr) continue;
-    const date = normalizeDate(dateStr);
-    if (!date) { errors.push(`${i+1}行目: 日時が無効 "${dateStr}"`); continue; }
-    rows.push({ title, category, date: date.toISOString(), note });
-  }
-  if (errors.length) throw new Error(errors.join('\n'));
-  return rows;
-}
-function parseCsvPreview() {
-  const text=document.getElementById('csvText').value.trim();
-  const preview=document.getElementById('csvPreview');
-  const content=document.getElementById('csvPreviewContent');
-  const btn=document.getElementById('csvImportBtn');
-  csvParsed=null;btn.style.opacity='0.4';btn.style.pointerEvents='none';
-  if(!text){showToast('テキストを入力してください');return;}
-  try{
-    const rows=parseCSVText(text);
-    const groups={};
-    rows.forEach(r=>{
-      if(!groups[r.title])groups[r.title]={category:r.category,logs:[]};
-      groups[r.title].logs.push(r);
-    });
-    let html='';
-    Object.entries(groups).forEach(([title,g])=>{
-      html+=`<div style="margin-bottom:8px;"><strong style="font-family:var(--font)">${esc(title)}</strong>`;
-      if(g.category)html+=` <span style="color:var(--muted)">${esc(g.category)}</span>`;
-      html+=` <span style="color:var(--muted)">(${g.logs.length}件)</span><br>`;
-      g.logs.forEach(l=>{html+=`&nbsp;&nbsp;${fmtDate(l.date)}${l.note?' — '+esc(l.note):''}<br>`;});
-      html+=`</div>`;
-    });
-    content.innerHTML=html;preview.style.display='block';
-    csvParsed=rows;btn.style.opacity='1';btn.style.pointerEvents='';
-    showToast(`${rows.length}行を確認しました`);
-  }catch(e){
-    content.innerHTML=`<span style="color:var(--countdown);white-space:pre-wrap;">${esc(e.message)}</span>`;
-    preview.style.display='block';
-  }
-}
-async function executeCsvImport() {
-  if(!csvParsed) { showToast('先に「確認する」を押してください'); return; }
-  if(!window._batchSaveToFirestore) { showToast('ログインが必要です'); return; }
-  const groups={};
-  csvParsed.forEach(r=>{
-    if(!groups[r.title])groups[r.title]={title:r.title,category:r.category,logs:[]};
-    groups[r.title].logs.push({id:uid(),date:r.date,note:r.note,photo:''});
-  });
-  const toSave=[];
-  let addedLogs=0;
-  Object.values(groups).forEach(g=>{
-    const existing=entries.find(e=>e.title===g.title);
-    if(existing){
-      g.logs.forEach(nl=>{
-        if(!existing.logs.find(l=>l.date===nl.date)){
-          existing.logs.push(nl); addedLogs++;
-        }
-      });
-      toSave.push(existing);
-    } else {
-      const ne={id:uid(),title:g.title,category:g.category,createdAt:new Date().toISOString(),logs:g.logs};
-      addedLogs+=ne.logs.length;
-      toSave.push(ne);
-    }
-  });
-  if(toSave.length===0){ showToast('追加できるデータがありませんでした'); return; }
-  try {
-    await window._batchSaveToFirestore(toSave);
-    document.getElementById('csvOverlay').classList.remove('open');
-    showToast(`${toSave.length}項目・${addedLogs}件の記録を追加しました`);
-    csvParsed=null;
-  } catch(e) {
-    console.error(e);
-    showToast('保存に失敗しました: ' + e.message);
-  }
-}
 
 function dl(content,filename,type){
   const url=URL.createObjectURL(new Blob([content],{type}));
